@@ -1,3 +1,5 @@
+import torch
+
 class InteractiveImitationLearning:
     """
     A class used to contain main imitation learning algorithm
@@ -79,6 +81,14 @@ class InteractiveImitationLearning:
         for horizon in range(self._horizon):
             self._current_horizon = horizon
             action = self._act(observation)
+            # cast control to non-tensor
+            control_copy = []
+            for ca in action:
+                if torch.is_tensor(ca):
+                    control_copy.append(ca.cpu().numpy())
+                else:
+                    control_copy.append(ca)
+            action = control_copy
             try:
                 next_observation, reward, done, info = self.environment.step(
                     [action[0], action[1] * self.gain]

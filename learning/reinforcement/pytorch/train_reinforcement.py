@@ -7,13 +7,20 @@ import numpy as np
 
 # Duckietown Specific
 from reinforcement.pytorch.ddpg import DDPG
+from reinforcement.pytorch.rcrl import RCRL
 from reinforcement.pytorch.utils import seed, evaluate_policy, ReplayBuffer
 from utils.env import launch_env
 from utils.wrappers import NormalizeWrapper, ImgWrapper, DtRewardWrapper, ActionWrapper, ResizeWrapper
+from gym_duckietown.simulator import AGENT_SAFETY_RAD
+from torch.utils.tensorboard import SummaryWriter
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+POSITION_THRESHOLD = 0.04
+REF_VELOCITY = 0.7
+FOLLOWING_DISTANCE = 0.24
+AGENT_SAFETY_GAIN = 1.15
 
 def _train(args):
     if not os.path.exists("./results"):
@@ -22,7 +29,8 @@ def _train(args):
         os.makedirs(args.model_dir)
 
     # Launch the env with our helper function
-    env = launch_env()
+    # update args to include different towns
+    env = launch_env('Duckietown-loop_pedestrians-v0')
     print("Initialized environment")
 
     # Wrappers
@@ -41,9 +49,14 @@ def _train(args):
     max_action = float(env.action_space.high[0])
 
     # Initialize policy
-    policy = DDPG(state_dim, action_dim, max_action, net_type="cnn")
-    replay_buffer = ReplayBuffer(args.replay_buffer_max_size)
-    print("Initialized DDPG")
+    # TODO: choose policy to be DDPG or RCRL, net_type
+    if args.rcrl:
+        # the net_type of RCRL is fixed to "cnn", prior is assigned to be the exp(-alpha*k) 
+        policy = RCRL(state_dim, action_dim, max_action, prior_dim=1)
+    else:
+        policy = DDPG(state_dim, action_dim, max_action, net_type="cnn")
+    replay_buffer = ReplayBuffer(args.replay_buffer_max_size, additional=args.rcrl)
+    print("Initialized Model")
 
     # Evaluate untrained policy
     evaluations = [evaluate_policy(env, policy)]
@@ -56,6 +69,12 @@ def _train(args):
     env_counter = 0
     reward = 0
     episode_timesteps = 0
+    last_sample = None
+    writer = SummaryWriter(log_dir=os.path.join(args.model_dir, 'log_tb'))
+    if args.rcrl: 
+        fn = "rcrl"
+    else:
+        fn = "ddpg"
     print("Starting training")
     while total_timesteps < args.max_timesteps:
 
@@ -67,16 +86,21 @@ def _train(args):
                     ("Total T: %d Episode Num: %d Episode T: %d Reward: %f")
                     % (total_timesteps, episode_num, episode_timesteps, episode_reward)
                 )
-                policy.train(replay_buffer, episode_timesteps, args.batch_size, args.discount, args.tau)
-
+                losses = policy.train(replay_buffer, episode_timesteps, args.batch_size, args.discount, args.tau)
+                # Write losses to tensorboard 
+                for tag, val in losses.items():
+                    writer.add_scalar('loss/'+tag, val, total_timesteps)
+                
                 # Evaluate episode
                 if timesteps_since_eval >= args.eval_freq:
                     timesteps_since_eval %= args.eval_freq
                     evaluations.append(evaluate_policy(env, policy))
                     print("rewards at time {}: {}".format(total_timesteps, evaluations[-1]))
+                    # Write rewards to tensorboard 
+                    writer.add_scalar('rewards', evaluations[-1], total_timesteps)
 
                     if args.save_models:
-                        policy.save(file_name="ddpg", directory=args.model_dir)
+                        policy.save(file_name=fn, directory=args.model_dir)
                     np.savez("./results/rewards.npz", evaluations)
 
             # Reset environment
@@ -105,8 +129,29 @@ def _train(args):
         done_bool = 0 if episode_timesteps + 1 == args.env_timesteps else float(done)
         episode_reward += reward
 
-        # Store data in replay buffer
-        replay_buffer.add(obs, new_obs, action, reward, done_bool)
+        if args.rcrl: 
+            # augment state input (obs, risk to closest object)
+            current_world_objects = env.objects
+            obj_distances = []
+            for obj in current_world_objects:
+                if not obj.static:
+                    obj_safe_dist = abs(
+                        obj.proximity(env.cur_pos, AGENT_SAFETY_RAD * AGENT_SAFETY_GAIN, true_safety_dist=True)
+                    )
+                    obj_distances.append(obj_safe_dist)
+            min_dist = min(obj_distances)
+            
+            # reduce variance by using exponential decay
+            exp_neg_min_dist = np.exp(-args.dist_param * min_dist)
+            
+            # Delay 1 step and store data in replay buffer; want one step look ahead
+            if last_sample:
+                last_sample[-1] = np.array([last_sample[-1], exp_neg_min_dist])
+                replay_buffer.add(*last_sample)
+            last_sample = [obs, new_obs, action, reward, done_bool, exp_neg_min_dist]
+        else: 
+            # Store data in replay buffer
+            replay_buffer.add(obs, new_obs, action, reward, done_bool)
 
         obs = new_obs
 
@@ -115,7 +160,7 @@ def _train(args):
         timesteps_since_eval += 1
 
     print("Training done, about to save..")
-    policy.save(filename="ddpg", directory=args.model_dir)
+    policy.save(filename=fn, directory=args.model_dir)
     print("Finished saving..should return now!")
 
 
@@ -144,5 +189,6 @@ if __name__ == "__main__":
         "--replay_buffer_max_size", default=10000, type=int
     )  # Maximum number of steps to keep in the replay buffer
     parser.add_argument("--model-dir", type=str, default="reinforcement/pytorch/models/")
-
+    parser.add_argument("--rcrl", action="store_true", default=False)
+    parser.add_argument("--dist_param", default=1.0, type=float) # when calculating possibility of collision, uses exp(-alpha * k)
     _train(parser.parse_args())

@@ -8,31 +8,18 @@ import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+_str_to_activation = {
+    'relu': nn.ReLU(),
+    'tanh': nn.Tanh(),
+    'leaky_relu': nn.LeakyReLU(),
+    'sigmoid': nn.Sigmoid(),
+    'selu': nn.SELU(),
+    'softplus': nn.Softplus(),
+    'identity': nn.Identity(),
+}
 
 # Implementation of Deep Deterministic Policy Gradients (DDPG)
 # Paper: https://arxiv.org/abs/1509.02971
-
-
-class ActorDense(nn.Module):
-    def __init__(self, state_dim, action_dim, max_action):
-        super(ActorDense, self).__init__()
-
-        state_dim = functools.reduce(operator.mul, state_dim, 1)
-
-        self.l1 = nn.Linear(state_dim, 400)
-        self.l2 = nn.Linear(400, 300)
-        self.l3 = nn.Linear(300, action_dim)
-
-        self.max_action = max_action
-
-        self.tanh = nn.Tanh()
-
-    def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
-        x = self.max_action * self.tanh(self.l3(x))
-        return x
-
 
 class ActorCNN(nn.Module):
     def __init__(self, action_dim, max_action):
@@ -83,25 +70,8 @@ class ActorCNN(nn.Module):
         return x
 
 
-class CriticDense(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(CriticDense, self).__init__()
-
-        state_dim = functools.reduce(operator.mul, state_dim, 1)
-
-        self.l1 = nn.Linear(state_dim, 400)
-        self.l2 = nn.Linear(400 + action_dim, 300)
-        self.l3 = nn.Linear(300, 1)
-
-    def forward(self, x, u):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(torch.cat([x, u], 1)))
-        x = self.l3(x)
-        return x
-
-
 class CriticCNN(nn.Module):
-    def __init__(self, action_dim):
+    def __init__(self, action_dim, prior_dim, output_activation=None):
         super(CriticCNN, self).__init__()
 
         flat_size = 32 * 9 * 14
@@ -121,8 +91,49 @@ class CriticCNN(nn.Module):
         self.dropout = nn.Dropout(0.5)
 
         self.lin1 = nn.Linear(flat_size, 256)
-        self.lin2 = nn.Linear(256 + action_dim, 128)
+        self.lin2 = nn.Linear(256 + action_dim + prior_dim, 128)
         self.lin3 = nn.Linear(128, 1)
+        if output_activation:
+            self.output_activation = _str_to_activation(output_activation)
+
+    def forward(self, states, actions, prior):
+        x = self.bn1(self.lr(self.conv1(states)))
+        x = self.bn2(self.lr(self.conv2(x)))
+        x = self.bn3(self.lr(self.conv3(x)))
+        x = self.bn4(self.lr(self.conv4(x)))
+        x = x.reshape(x.size(0), -1)  # flatten
+        x = self.lr(self.lin1(x))
+        x = self.lr(self.lin2(torch.cat([x, actions, prior], 1)))  # c
+        x = self.lin3(x)
+
+        return x
+
+
+class PriorCNN(nn.Module):
+    def __init__(self, action_dim, prior_dim, output_activation=None):
+        super(PriorCNN, self).__init__()
+
+        flat_size = 32 * 9 * 14
+
+        self.lr = nn.LeakyReLU()
+
+        self.conv1 = nn.Conv2d(3, 32, 8, stride=2)
+        self.conv2 = nn.Conv2d(32, 32, 4, stride=2)
+        self.conv3 = nn.Conv2d(32, 32, 4, stride=2)
+        self.conv4 = nn.Conv2d(32, 32, 4, stride=1)
+
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.bn3 = nn.BatchNorm2d(32)
+        self.bn4 = nn.BatchNorm2d(32)
+
+        self.dropout = nn.Dropout(0.5)
+
+        self.lin1 = nn.Linear(flat_size, 256)
+        self.lin2 = nn.Linear(256 + action_dim, 128)
+        self.lin3 = nn.Linear(128, prior_dim)
+        if output_activation:
+            self.output_activation = _str_to_activation[output_activation]
 
     def forward(self, states, actions):
         x = self.bn1(self.lr(self.conv1(states)))
@@ -133,41 +144,36 @@ class CriticCNN(nn.Module):
         x = self.lr(self.lin1(x))
         x = self.lr(self.lin2(torch.cat([x, actions], 1)))  # c
         x = self.lin3(x)
+        x = self.output_activation(x)
 
         return x
 
 
-class DDPG(object):
-    def __init__(self, state_dim, action_dim, max_action, net_type):
-        super(DDPG, self).__init__()
-        print("Starting DDPG init")
-        assert net_type in ["cnn", "dense"]
+class RCRL(object):
+    # adapted from DDPG file (in duckietown, we are only predicting the chance of collision, since other than that, we have limited rules)
+    def __init__(self, state_dim, action_dim, max_action, prior_dim):
+        super(RCRL, self).__init__()
+        print("Starting RCRL init")
 
         self.state_dim = state_dim
-
-        if net_type == "dense":
-            self.flat = True
-            self.actor = ActorDense(state_dim, action_dim, max_action).to(device)
-            self.actor_target = ActorDense(state_dim, action_dim, max_action).to(device)
-        else:
-            self.flat = False
-            self.actor = ActorCNN(action_dim, max_action).to(device)
-            self.actor_target = ActorCNN(action_dim, max_action).to(device)
+        self.prior_dim = prior_dim 
+        self.flat = False
+        self.actor = ActorCNN(action_dim, max_action).to(device)
+        self.actor_target = ActorCNN(action_dim, max_action).to(device)
 
         print("Initialized Actor")
         self.actor_target.load_state_dict(self.actor.state_dict())
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-4)
         print("Initialized Target+Opt [Actor]")
-        if net_type == "dense":
-            self.critic = CriticDense(state_dim, action_dim).to(device)
-            self.critic_target = CriticDense(state_dim, action_dim).to(device)
-        else:
-            self.critic = CriticCNN(action_dim).to(device)
-            self.critic_target = CriticCNN(action_dim).to(device)
+        self.critic = CriticCNN(action_dim, prior_dim).to(device)
+        self.critic_target = CriticCNN(action_dim, prior_dim).to(device)
         print("Initialized Critic")
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters())
         print("Initialized Target+Opt [Critic]")
+        self.prior_regressor = PriorCNN(action_dim, prior_dim, output_activation='sigmoid').to(device)
+        self.prior_optimizer = torch.optim.Adam(self.prior_regressor.parameters())
+        print("Initialized Prior+Opt")
 
     def predict(self, state):
 
@@ -191,13 +197,30 @@ class DDPG(object):
             next_state = torch.FloatTensor(sample["next_state"]).to(device)
             done = torch.FloatTensor(1 - sample["done"]).to(device)
             reward = torch.FloatTensor(sample["reward"]).to(device)
+            
+            additional_t = torch.FloatTensor(sample["additional"][:,0]).to(device)
+            additional_t = torch.reshape(additional_t, (-1, self.prior_dim))
+            additional_tp1 = torch.FloatTensor(sample["additional"][:,1]).to(device)
+            additional_tp1 = torch.reshape(additional_tp1, (-1, self.prior_dim))
+            
+            # Compute prior and optimize prior network 
+            pred_additional = self.prior_regressor(state, action)
+            prior_loss = F.mse_loss(pred_additional, additional_t)
+
+            # Optimize the prior
+            self.prior_optimizer.zero_grad()
+            prior_loss.backward()
+            self.prior_optimizer.step()
+            
+            # Detach pred_additional (no gradient into prior network)
+            pred_additional = pred_additional.detach()
 
             # Compute the target Q value
-            target_Q = self.critic_target(next_state, self.actor_target(next_state))
+            target_Q = self.critic_target(next_state, self.actor_target(next_state), additional_tp1)
             target_Q = reward + (done * discount * target_Q).detach()
 
             # Get current Q estimate
-            current_Q = self.critic(state, action)
+            current_Q = self.critic(state, action, pred_additional) # this can be additional_t
 
             # Compute critic loss
             critic_loss = F.mse_loss(current_Q, target_Q)
@@ -208,7 +231,7 @@ class DDPG(object):
             self.critic_optimizer.step()
 
             # Compute actor loss
-            actor_loss = -self.critic(state, self.actor(state)).mean()
+            actor_loss = -self.critic(state, self.actor(state), pred_additional).mean()
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
@@ -221,6 +244,12 @@ class DDPG(object):
 
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+
+        return {
+            "prior_loss": prior_loss.detach().cpu().numpy(), 
+            "critic_loss": critic_loss.detach().cpu().numpy(), 
+            "actor_loss": actor_loss.detach().cpu().numpy(),
+        }
 
     def save(self, filename, directory):
         print("Saving to {}/{}_[actor|critic].pth".format(directory, filename))

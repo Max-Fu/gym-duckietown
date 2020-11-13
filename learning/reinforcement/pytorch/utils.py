@@ -16,25 +16,27 @@ def seed(seed):
 
 # Simple replay buffer
 class ReplayBuffer(object):
-    def __init__(self, max_size):
+    def __init__(self, max_size, additional=False): 
+        # use additional to store other values, i.e. prior information
         self.storage = []
         self.max_size = max_size
+        self.additional = additional 
 
     # Expects tuples of (state, next_state, action, reward, done)
-    def add(self, state, next_state, action, reward, done):
+    def add(self, state, next_state, action, reward, done, additional=None):
         if len(self.storage) < self.max_size:
-            self.storage.append((state, next_state, action, reward, done))
+            self.storage.append((state, next_state, action, reward, done, additional))
         else:
             # Remove random element in the memory beforea adding a new one
             self.storage.pop(random.randrange(len(self.storage)))
-            self.storage.append((state, next_state, action, reward, done))
+            self.storage.append((state, next_state, action, reward, done, additional))
 
     def sample(self, batch_size=100, flat=True):
         ind = np.random.randint(0, len(self.storage), size=batch_size)
-        states, next_states, actions, rewards, dones = [], [], [], [], []
+        states, next_states, actions, rewards, dones, additionals = [], [], [], [], [], []
 
         for i in ind:
-            state, next_state, action, reward, done = self.storage[i]
+            state, next_state, action, reward, done, additional = self.storage[i]
 
             if flat:
                 states.append(np.array(state, copy=False).flatten())
@@ -45,8 +47,17 @@ class ReplayBuffer(object):
             actions.append(np.array(action, copy=False))
             rewards.append(np.array(reward, copy=False))
             dones.append(np.array(done, copy=False))
-
-        # state_sample, action_sample, next_state_sample, reward_sample, done_sample
+            additionals.append(np.array(additional, copy=False))
+        # state_sample, action_sample, next_state_sample, reward_sample, done_sample, additional_sample if self.additional is set to true
+        if self.additional:
+            return {
+                "state": np.stack(states),
+                "next_state": np.stack(next_states),
+                "action": np.stack(actions),
+                "reward": np.stack(rewards).reshape(-1, 1),
+                "done": np.stack(dones).reshape(-1, 1),
+                "additional": np.stack(additionals),
+            }
         return {
             "state": np.stack(states),
             "next_state": np.stack(next_states),

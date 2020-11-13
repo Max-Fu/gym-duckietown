@@ -9,3 +9,8 @@ bin
 trained_models
 dist
 requirements.resolved
+
+.vscode 
+learning/runs
+learning/iil_baseline
+learning/reinforcement/pytorch/models
