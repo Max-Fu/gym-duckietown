@@ -70,7 +70,7 @@ def _train(args):
     reward = 0
     episode_timesteps = 0
     last_sample = None
-    writer = SummaryWriter(log_dir=os.path.join(args.model_dir, 'log_tb'))
+    writer = SummaryWriter(log_dir='./results/log_tb')
     if args.rcrl: 
         fn = "rcrl"
     else:
@@ -100,7 +100,7 @@ def _train(args):
                     writer.add_scalar('rewards', evaluations[-1], total_timesteps)
 
                     if args.save_models:
-                        policy.save(file_name=fn, directory=args.model_dir)
+                        policy.save(filename=fn, directory=args.model_dir)
                     np.savez("./results/rewards.npz", evaluations)
 
             # Reset environment
