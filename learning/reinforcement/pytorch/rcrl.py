@@ -187,6 +187,10 @@ class RCRL(object):
         return self.actor(state).cpu().data.numpy().flatten()
 
     def train(self, replay_buffer, iterations, batch_size=64, discount=0.99, tau=0.001):
+    
+        total_prior_loss = 0 
+        total_critic_loss = 0 
+        total_actor_loss = 0 
 
         for it in range(iterations):
 
@@ -245,10 +249,14 @@ class RCRL(object):
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
+            total_prior_loss += prior_loss.detach().cpu().numpy()
+            total_critic_loss += critic_loss.detach().cpu().numpy()
+            total_actor_loss += actor_loss.detach().cpu().numpy()
+
         return {
-            "prior_loss": prior_loss.detach().cpu().numpy(), 
-            "critic_loss": critic_loss.detach().cpu().numpy(), 
-            "actor_loss": actor_loss.detach().cpu().numpy(),
+            "prior_loss": total_prior_loss / iterations, 
+            "critic_loss": total_critic_loss / iterations, 
+            "actor_loss": total_actor_loss / iterations,
         }
 
     def save(self, filename, directory):
