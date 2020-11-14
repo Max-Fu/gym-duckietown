@@ -151,7 +151,7 @@ class PriorCNN(nn.Module):
 
 class RCRL(object):
     # adapted from DDPG file (in duckietown, we are only predicting the chance of collision, since other than that, we have limited rules)
-    def __init__(self, state_dim, action_dim, max_action, prior_dim):
+    def __init__(self, state_dim, action_dim, max_action, prior_dim, lr=1e-4):
         super(RCRL, self).__init__()
         print("Starting RCRL init")
 
@@ -163,16 +163,16 @@ class RCRL(object):
 
         print("Initialized Actor")
         self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-4)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         print("Initialized Target+Opt [Actor]")
         self.critic = CriticCNN(action_dim, prior_dim).to(device)
         self.critic_target = CriticCNN(action_dim, prior_dim).to(device)
         print("Initialized Critic")
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters())
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
         print("Initialized Target+Opt [Critic]")
         self.prior_regressor = PriorCNN(action_dim, prior_dim, output_activation='sigmoid').to(device)
-        self.prior_optimizer = torch.optim.Adam(self.prior_regressor.parameters())
+        self.prior_optimizer = torch.optim.Adam(self.prior_regressor.parameters(), lr=lr)
         print("Initialized Prior+Opt")
 
     def predict(self, state):

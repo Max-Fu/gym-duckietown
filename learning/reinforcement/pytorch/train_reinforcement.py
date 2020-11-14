@@ -71,15 +71,14 @@ def _train(args):
     reward = 0
     episode_timesteps = 0
     last_sample = None
-    results_folder_path = './results/{}'.format(str(datetime.datetime.now()))
-    
-    writer = SummaryWriter(log_dir=os.path.join(results_folder_path, 'log_tb'))
     if args.rcrl: 
         fn = "rcrl"
     else:
         fn = "ddpg"
-
+    results_folder_path = './results/{}-{}'.format(fn, str(datetime.datetime.now()))
     model_folder_path = os.path.join(args.model_dir, fn+str(datetime.datetime.now()))
+    writer = SummaryWriter(log_dir=os.path.join(results_folder_path, 'log_tb'))
+
     print("saving model weights to {}".format(model_folder_path))
     print("Starting training")
     while total_timesteps < args.max_timesteps:
