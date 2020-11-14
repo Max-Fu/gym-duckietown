@@ -72,11 +72,15 @@ def _train(args):
     episode_timesteps = 0
     last_sample = None
     results_folder_path = './results/{}'.format(str(datetime.datetime.now()))
+    
     writer = SummaryWriter(log_dir=os.path.join(results_folder_path, 'log_tb'))
     if args.rcrl: 
         fn = "rcrl"
     else:
         fn = "ddpg"
+
+    model_folder_path = os.path.join(args.model_dir, fn+str(datetime.datetime.now()))
+    print("saving model weights to {}".format(model_folder_path))
     print("Starting training")
     while total_timesteps < args.max_timesteps:
 
@@ -102,7 +106,7 @@ def _train(args):
                     writer.add_scalar('rewards', evaluations[-1], total_timesteps)
 
                     if args.save_models:
-                        policy.save(filename=fn, directory=args.model_dir)
+                        policy.save(filename=fn, directory=model_folder_path)
                     np.savez(os.path.join(results_folder_path, "rewards.npz"), evaluations)
 
             # Reset environment
@@ -162,7 +166,8 @@ def _train(args):
         timesteps_since_eval += 1
 
     print("Training done, about to save..")
-    policy.save(filename=fn, directory=args.model_dir)
+    policy.save(filename=fn, directory=model_folder_path)
+    print("Save to directory: {}".format(model_folder_path))
     print("Finished saving..should return now!")
 
 
