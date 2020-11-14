@@ -13,6 +13,7 @@ from utils.env import launch_env
 from utils.wrappers import NormalizeWrapper, ImgWrapper, DtRewardWrapper, ActionWrapper, ResizeWrapper
 from gym_duckietown.simulator import AGENT_SAFETY_RAD
 from torch.utils.tensorboard import SummaryWriter
+import datetime
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -70,7 +71,8 @@ def _train(args):
     reward = 0
     episode_timesteps = 0
     last_sample = None
-    writer = SummaryWriter(log_dir='./results/log_tb')
+    results_folder_path = './results/{}'.format(str(datetime.datetime.now()))
+    writer = SummaryWriter(log_dir=os.path.join(results_folder_path, 'log_tb'))
     if args.rcrl: 
         fn = "rcrl"
     else:
@@ -101,7 +103,7 @@ def _train(args):
 
                     if args.save_models:
                         policy.save(filename=fn, directory=args.model_dir)
-                    np.savez("./results/rewards.npz", evaluations)
+                    np.savez(os.path.join(results_folder_path, "rewards.npz"), evaluations)
 
             # Reset environment
             env_counter += 1
