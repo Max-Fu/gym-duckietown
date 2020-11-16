@@ -14,6 +14,7 @@ from utils.wrappers import NormalizeWrapper, ImgWrapper, DtRewardWrapper, Action
 from gym_duckietown.simulator import AGENT_SAFETY_RAD
 from torch.utils.tensorboard import SummaryWriter
 import datetime
+import hashlib
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -53,7 +54,7 @@ def _train(args):
     # TODO: choose policy to be DDPG or RCRL, net_type
     if args.rcrl:
         # the net_type of RCRL is fixed to "cnn", prior is assigned to be the exp(-alpha*k) 
-        policy = RCRL(state_dim, action_dim, max_action, prior_dim=1)
+        policy = RCRL(state_dim, action_dim, max_action, prior_dim=1, lr_actor=args.lr_actor, lr_critic=args.lr_critic, lr_prior=args.lr_prior)
     else:
         policy = DDPG(state_dim, action_dim, max_action, net_type="cnn")
     replay_buffer = ReplayBuffer(args.replay_buffer_max_size, additional=args.rcrl)
@@ -75,12 +76,17 @@ def _train(args):
         fn = "rcrl"
     else:
         fn = "ddpg"
-    results_folder_path = './results/{}-{}'.format(fn, str(datetime.datetime.now()))
-    model_folder_path = os.path.join(args.model_dir, fn+str(datetime.datetime.now()))
-    writer = SummaryWriter(log_dir=os.path.join(results_folder_path, 'log_tb'))
-
-    print("saving model weights to {}".format(model_folder_path))
+    
+    folder_name = hashlib.sha1(str(datetime.datetime.now()).encode('utf-8')).hexdigest()[:10]
+    results_folder_path = './results/{}'.format(folder_name)
+    model_folder_path = os.path.join(args.model_dir, folder_name)
+    os.makedirs(model_folder_path, exist_ok=True)
+    writer = SummaryWriter(log_dir=results_folder_path)
+    
+    print("Saving tensorboard log to {}".format(results_folder_path))
+    print("Saving model weights to {}".format(model_folder_path))
     print("Starting training")
+
     while total_timesteps < args.max_timesteps:
 
         print("timestep: {} | reward: {}".format(total_timesteps, reward))
@@ -103,9 +109,10 @@ def _train(args):
                     print("rewards at time {}: {}".format(total_timesteps, evaluations[-1]))
                     # Write rewards to tensorboard 
                     writer.add_scalar('rewards', evaluations[-1], total_timesteps)
-
+                    print("Saving tensorboard log to {}".format(results_folder_path))
                     if args.save_models:
                         policy.save(filename=fn, directory=model_folder_path)
+                        print("Saving model weights to {}".format(model_folder_path))
                     np.savez(os.path.join(results_folder_path, "rewards.npz"), evaluations)
 
             # Reset environment
@@ -174,17 +181,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # DDPG Args
-    parser.add_argument("--seed", default=0, type=int)  # Sets Gym, PyTorch and Numpy seeds
+    parser.add_argument("--seed", default=42, type=int)  # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument(
         "--start_timesteps", default=1e4, type=int
     )  # How many time steps purely random policy is run for
-    parser.add_argument("--eval_freq", default=5e3, type=float)  # How often (time steps) we evaluate
+    parser.add_argument("--eval_freq", default=100, type=float)  # How often (time steps) we evaluate
     parser.add_argument("--max_timesteps", default=1e6, type=float)  # Max time steps to run environment for
     parser.add_argument("--save_models", action="store_true", default=True)  # Whether or not models are saved
     parser.add_argument("--expl_noise", default=0.1, type=float)  # Std of Gaussian exploration noise
     parser.add_argument("--batch_size", default=32, type=int)  # Batch size for both actor and critic
     parser.add_argument("--discount", default=0.99, type=float)  # Discount factor
     parser.add_argument("--tau", default=0.005, type=float)  # Target network update rate
+    parser.add_argument("--lr_actor", default=1e-4, type=float) # learning rate of actor (only for RCRL)
+    parser.add_argument("--lr_critic", default=1e-3, type=float) # learning rate of critic (only for RCRL)
+    parser.add_argument("--lr_prior", default=1e-4, type=float) # learning rate of prior (only for RCRL)
     parser.add_argument(
         "--policy_noise", default=0.2, type=float
     )  # Noise added to target policy during critic update
