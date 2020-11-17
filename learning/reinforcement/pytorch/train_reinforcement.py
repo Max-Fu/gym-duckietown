@@ -177,7 +177,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # DDPG Args
-    parser.add_argument("--seed", default=42, type=int)  # Sets Gym, PyTorch and Numpy seeds
+    parser.add_argument("--seed", default=200, type=int)  # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument(
         "--start_timesteps", default=1e4, type=int
     )  # How many time steps purely random policy is run for
