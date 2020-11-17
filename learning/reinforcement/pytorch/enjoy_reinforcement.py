@@ -38,7 +38,7 @@ def _enjoy(args):
         fn = "rcrl"
     else:
         fn = "ddpg"
-    policy.load(filename=fn, directory="reinforcement/pytorch/models/{}/".format(args.folder_hash))
+    policy.load(filename=fn, directory=os.path.join("reinforcement/pytorch/models", args.folder_hash))
 
     obs = env.reset()
     done = False
@@ -56,5 +56,8 @@ def _enjoy(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--rcrl", action="store_true", default=False)
+    parser.add_argument("--lr_actor", default=1e-4, type=float) # learning rate of actor (only for RCRL)
+    parser.add_argument("--lr_critic", default=1e-3, type=float) # learning rate of critic (only for RCRL)
+    parser.add_argument("--lr_prior", default=1e-4, type=float) # learning rate of prior (only for RCRL)
     parser.add_argument("--folder_hash", required=True, type=str)
     _enjoy(parser.parse_args())
