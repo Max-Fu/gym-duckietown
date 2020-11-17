@@ -71,7 +71,7 @@ def _train(args):
     env_counter = 0
     reward = 0
     episode_timesteps = 0
-    last_sample = None
+
     if args.rcrl: 
         fn = "rcrl"
     else:
@@ -132,6 +132,19 @@ def _train(args):
                     env.action_space.low, env.action_space.high
                 )
 
+        if args.rcrl: 
+            current_world_objects = env.objects
+            obj_distances = []
+            for obj in current_world_objects:
+                if not obj.static:
+                    obj_safe_dist = abs(
+                        obj.proximity(env.cur_pos, AGENT_SAFETY_RAD * AGENT_SAFETY_GAIN, true_safety_dist=True)
+                    )
+                    obj_distances.append(obj_safe_dist)
+            min_dist = min(obj_distances)
+            # reduce variance by using exponential decay
+            exp_neg_min_dist = np.exp(-args.dist_param * min_dist)
+
         # Perform action
         new_obs, reward, done, _ = env.step(action)
 
@@ -142,25 +155,8 @@ def _train(args):
         episode_reward += reward
 
         if args.rcrl: 
-            # augment state input (obs, risk to closest object)
-            current_world_objects = env.objects
-            obj_distances = []
-            for obj in current_world_objects:
-                if not obj.static:
-                    obj_safe_dist = abs(
-                        obj.proximity(env.cur_pos, AGENT_SAFETY_RAD * AGENT_SAFETY_GAIN, true_safety_dist=True)
-                    )
-                    obj_distances.append(obj_safe_dist)
-            min_dist = min(obj_distances)
-            
-            # reduce variance by using exponential decay
-            exp_neg_min_dist = np.exp(-args.dist_param * min_dist)
-            
-            # Delay 1 step and store data in replay buffer; want one step look ahead
-            if last_sample:
-                last_sample[-1] = np.array([last_sample[-1], exp_neg_min_dist])
-                replay_buffer.add(*last_sample)
-            last_sample = [obs, new_obs, action, reward, done_bool, exp_neg_min_dist]
+            # Store data in replay buffer
+            replay_buffer.add(obs, new_obs, action, reward, done_bool, exp_neg_min_dist)
         else: 
             # Store data in replay buffer
             replay_buffer.add(obs, new_obs, action, reward, done_bool)
