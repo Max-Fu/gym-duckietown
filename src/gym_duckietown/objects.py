@@ -157,7 +157,7 @@ class WorldObj:
             raise NotImplementedError
         return False
 
-    def proximity(self, agent_pos, agent_safety_rad):
+    def proximity(self, agent_pos, agent_safety_rad, true_safety_dist=False):
         """
         See if the agent is too close to this object
         For static, return 0 (static safedriving checked w
@@ -267,7 +267,7 @@ class DuckiebotObj(WorldObj):
         """
         return intersects_single_obj(agent_corners, self.obj_corners.T, agent_norm, self.obj_norm)
 
-    def proximity(self, agent_pos, agent_safety_rad):
+    def proximity(self, agent_pos, agent_safety_rad, true_safety_dist=False):
         """
         See if the agent is too close to this object
         based on a heuristic for the "overlap" between
@@ -275,7 +275,8 @@ class DuckiebotObj(WorldObj):
         """
         d = np.linalg.norm(agent_pos - self.pos)
         score = d - agent_safety_rad - self.safety_radius
-
+        if true_safety_dist:
+            return score
         return min(0, score)
 
     def _update_pos(self, action, deltaTime):
@@ -368,7 +369,7 @@ class DuckieObj(WorldObj):
         """
         return intersects_single_obj(agent_corners, self.obj_corners.T, agent_norm, self.obj_norm)
 
-    def proximity(self, agent_pos, agent_safety_rad):
+    def proximity(self, agent_pos, agent_safety_rad, true_safety_dist=False):
         """
         See if the agent is too close to this object
         based on a heuristic for the "overlap" between
@@ -376,7 +377,8 @@ class DuckieObj(WorldObj):
         """
         d = np.linalg.norm(agent_pos - self.center)
         score = d - agent_safety_rad - self.safety_radius
-
+        if true_safety_dist:
+            return score
         return min(0, score)
 
     def step(self, delta_time: float):
@@ -514,7 +516,7 @@ class CheckerboardObj(WorldObj):
         """
         return intersects_single_obj(agent_corners, self.obj_corners.T, agent_norm, self.obj_norm)
 
-    def proximity(self, agent_pos, agent_safety_rad):
+    def proximity(self, agent_pos, agent_safety_rad, true_safety_dist=False):
         """
         See if the agent is too close to this object
         based on a heuristic for the "overlap" between
@@ -522,7 +524,8 @@ class CheckerboardObj(WorldObj):
         """
         d = np.linalg.norm(agent_pos - self.center)
         score = d - agent_safety_rad - self.safety_radius
-
+        if true_safety_dist:
+            return score 
         return min(0, score)
 
     def step(self, delta_time):

@@ -140,9 +140,12 @@ DEFAULT_FRAME_SKIP = 1
 
 DEFAULT_ACCEPT_START_ANGLE_DEG = 60
 
-REWARD_INVALID_POSE = -1000
+# REWARD_INVALID_POSE = -1000
+REWARD_INVALID_POSE = -500
 
 MAX_SPAWN_ATTEMPTS = 5000
+
+MIN_SPEED = 0.1
 
 LanePosition0 = namedtuple("LanePosition", "dist dot_dir angle_deg angle_rad")
 
@@ -1224,7 +1227,8 @@ class Simulator(gym.Env):
         # print("updating physics")
         if delta_time is None:
             delta_time = self.delta_time
-        self.wheelVels = action * self.robot_speed * 1
+        # self.wheelVels = action * self.robot_speed * 1
+        self.wheelVels = action * self.speed * 1
         prev_pos = self.cur_pos
 
         # Update the robot's position
@@ -1333,9 +1337,14 @@ class Simulator(gym.Env):
         except NotInLane:
             reward = 40 * col_penalty
         else:
-
             # Compute the reward
-            reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty
+            rad_angle = np.deg2rad(lp.angle_deg)
+            velocity_reward = (speed - MIN_SPEED) * (1 - np.abs(np.sin(rad_angle)))
+            angle_reward = 1 - 5 * np.abs(np.sin(rad_angle))
+            close_to_line = - np.abs(lp.dist)
+            reward = 10 * velocity_reward + 5 * angle_reward + 3 * close_to_line + 50 * col_penalty
+            # reward = 10 * (speed - MIN_SPEED) * lp.dot_dir - 2 * np.abs(lp.dist) + 40 * col_penalty - 10 * np.abs(angle)
+            # reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty # default
         return reward
 
     def step(self, action: np.ndarray):
@@ -1371,7 +1380,8 @@ class Simulator(gym.Env):
             done_code = "max-steps-reached"
         else:
             done = False
-            reward = self.compute_reward(self.cur_pos, self.cur_angle, self.robot_speed)
+            # reward = self.compute_reward(self.cur_pos, self.cur_angle, self.robot_speed)
+            reward = self.compute_reward(self.cur_pos, self.cur_angle, self.speed)
             msg = ""
             done_code = "in-progress"
         return DoneRewardInfo(done=done, done_why=msg, reward=reward, done_code=done_code)
