@@ -140,8 +140,7 @@ DEFAULT_FRAME_SKIP = 1
 
 DEFAULT_ACCEPT_START_ANGLE_DEG = 60
 
-# REWARD_INVALID_POSE = -1000
-REWARD_INVALID_POSE = -500
+REWARD_INVALID_POSE = -1000
 
 MAX_SPAWN_ATTEMPTS = 5000
 
@@ -1339,10 +1338,14 @@ class Simulator(gym.Env):
         else:
             # Compute the reward
             rad_angle = np.deg2rad(lp.angle_deg)
-            velocity_reward = (speed - MIN_SPEED) * (1 - np.abs(np.sin(rad_angle)))
-            angle_reward = 1 - 5 * np.abs(np.sin(rad_angle))
-            close_to_line = - np.abs(lp.dist)
-            reward = 10 * velocity_reward + 5 * angle_reward + 3 * close_to_line + 50 * col_penalty
+            angle_reward = 1 - np.sqrt(np.abs(np.sin(rad_angle)))
+            velocity_reward = speed * angle_reward
+            close_to_line = 1 - np.sqrt(np.abs(lp.dist))
+            close_to_line_factor = 10 # best for turning # was 50
+            # correct_side = 0 if lp.dist < 0 else np.sqrt(lp.dist)
+            reward = close_to_line_factor * velocity_reward * close_to_line + 40 * col_penalty
+            # reward = 20 * velocity_reward + close_to_line_factor * close_to_line * speed + 10 * correct_side * speed + 50 * col_penalty # + 3 * close_to_line  # last used 
+            # reward = (20 * velocity_reward + 10 * correct_side + 30 * angle_reward) / 5 + 50 * col_penalty # + 3 * close_to_line 
             # reward = 10 * (speed - MIN_SPEED) * lp.dot_dir - 2 * np.abs(lp.dist) + 40 * col_penalty - 10 * np.abs(angle)
             # reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty # default
         return reward
