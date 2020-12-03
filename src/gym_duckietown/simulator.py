@@ -152,6 +152,7 @@ TileStyle = Enum("TileStyle", "synthetic photos")
 # String that prepends the texture filename of the specified type
 STYLE_PREPEND_STRS = {TileStyle.synthetic: "synth_", TileStyle.photos: ""}
 
+AGENT_SAFETY_GAIN = 1.15
 
 class LanePosition(LanePosition0):
     def as_json_dict(self):
@@ -208,6 +209,7 @@ class Simulator(gym.Env):
         color_ground: Sequence[int] = (0.15, 0.15, 0.15),
         style: str = "photos",
         enable_leds: bool = False,
+        prior_dim: int = 0, 
     ):
         """
 
@@ -232,6 +234,7 @@ class Simulator(gym.Env):
         :param style: String that represent which tiles will be loaded. One of ["photos", "synthetic"]
         :param enable_leds: Enables LEDs drawing.
         """
+        self.prior_dim = prior_dim
         self.enable_leds = enable_leds
         information = get_graphics_information()
         logger.info(f"Information about the graphics card: \n {information}")
@@ -1354,6 +1357,31 @@ class Simulator(gym.Env):
         misc["Simulator"]["msg"] = d.done_why
 
         return obs, d.reward, d.done, misc
+
+    def get_prior(self, action, dist_param=1):
+        current_world_objects = self.objects
+        obj_distances = []
+        for obj in current_world_objects:
+            if not obj.static:
+                obj_safe_dist = abs(
+                    obj.proximity(self.cur_pos, AGENT_SAFETY_RAD * AGENT_SAFETY_GAIN, true_safety_dist=True)
+                )
+                obj_distances.append(obj_safe_dist)
+        try:
+            min_dist = min(obj_distances)
+            # reduce variance by using exponential decay
+            exp_neg_min_dist = np.exp(-dist_param * min_dist)
+        except ValueError:
+            exp_neg_min_dist = 0
+        
+        if self.prior_dim == 2:
+            lane_dist = np.abs(self.get_lane_pos2(self.cur_pos, action[1]).dist)
+            sample_prior = [exp_neg_min_dist, lane_dist]
+        elif self.prior_dim == 1:
+            sample_prior = exp_neg_min_dist
+        else: 
+            sample_prior = None
+        return sample_prior
 
     def _compute_done_reward(self) -> DoneRewardInfo:
         # If the agent is not in a valid pose (on drivable tiles)
