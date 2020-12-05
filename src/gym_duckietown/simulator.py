@@ -1338,9 +1338,37 @@ class Simulator(gym.Env):
         else:
 
             # Compute the reward
-            reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty
-            reward += 3
+            # reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty # original
+            # reward = +3.0 * speed * lp.dot_dir + -1 * np.abs(lp.dist) + +40 * col_penalty
+
+            close_to_line = 1 - np.sqrt(np.abs(lp.dist))
+            reward = speed * lp.dot_dir + close_to_line + 40 * col_penalty # original
+            # reward = 10 * speed + 5 * close_to_line + 40 * col_penalty
         return reward
+
+    # def compute_reward(self, pos, angle, speed):
+    #     # Compute the collision avoidance penalty
+    #     col_penalty = self.proximity_penalty2(pos, angle)
+
+    #     # Get the position relative to the right lane tangent
+    #     try:
+    #         lp = self.get_lane_pos2(pos, angle)
+    #     except NotInLane:
+    #         reward = 40 * col_penalty
+    #     else:
+    #         # Compute the reward
+    #         rad_angle = np.deg2rad(lp.angle_deg)
+    #         angle_reward = 1 - np.sqrt(np.abs(np.sin(rad_angle)))
+    #         velocity_reward = speed * angle_reward
+    #         close_to_line = 1 - np.sqrt(np.abs(lp.dist))
+    #         close_to_line_factor = 10 # best for turning # was 50
+    #         # correct_side = 0 if lp.dist < 0 else np.sqrt(lp.dist)
+    #         reward = close_to_line_factor * velocity_reward * close_to_line + 40 * col_penalty
+    #         # reward = 20 * velocity_reward + close_to_line_factor * close_to_line * speed + 10 * correct_side * speed + 50 * col_penalty # + 3 * close_to_line  # last used 
+    #         # reward = (20 * velocity_reward + 10 * correct_side + 30 * angle_reward) / 5 + 50 * col_penalty # + 3 * close_to_line 
+    #         # reward = 10 * (speed - MIN_SPEED) * lp.dot_dir - 2 * np.abs(lp.dist) + 40 * col_penalty - 10 * np.abs(angle)
+    #         # reward = +1.0 * speed * lp.dot_dir + -10 * np.abs(lp.dist) + +40 * col_penalty # default
+    #     return reward
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1, 1)
@@ -1374,8 +1402,10 @@ class Simulator(gym.Env):
         except ValueError:
             exp_neg_min_dist = 0
         
-        if self.prior_dim == 2:
-            lane_dist = np.abs(self.get_lane_pos2(self.cur_pos, action[1]).dist)
+        lane_dist = np.exp(-dist_param * np.abs(self.get_lane_pos2(self.cur_pos, action[1]).dist))
+        if self.prior_dim == 3:
+            sample_prior = [exp_neg_min_dist, lane_dist, self.speed]
+        elif self.prior_dim == 2:
             sample_prior = [exp_neg_min_dist, lane_dist]
         elif self.prior_dim == 1:
             sample_prior = exp_neg_min_dist
